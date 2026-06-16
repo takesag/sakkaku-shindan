@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>錯覚資産診断</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Noto Sans JP', sans-serif; background: #f5f3ff; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 2rem 1rem; }
+.card { width: 100%; max-width: 420px; background: #fff; border-radius: 28px; padding: 1.75rem 1.25rem 2rem; border: 1px solid #CECBF6; }
+.header { text-align: center; margin-bottom: 1.25rem; }
+.title { font-size: 24px; font-weight: 500; color: #7F77DD; letter-spacing: -0.5px; }
+.subtitle { font-size: 13px; color: #888780; margin-top: 4px; }
+.cam-frame { position: relative; width: 100%; aspect-ratio: 3/4; border-radius: 20px; overflow: hidden; border: 2.5px solid #CECBF6; background: #EEEDFE; display: flex; align-items: center; justify-content: center; }
+.idle-inner { text-align: center; padding: 2rem; }
+.idle-inner svg { display: block; margin: 0 auto 12px; }
+.idle-text { font-size: 14px; color: #534AB7; }
+#video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: none; }
+#preview-img { display: none; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.loading-overlay { display: none; position: absolute; inset: 0; background: rgba(83,74,183,0.72); flex-direction: column; align-items: center; justify-content: center; border-radius: 18px; }
+.scan-line { position: absolute; left: 0; right: 0; height: 3px; background: #AFA9EC; top: 0; animation: scanDown 1.5s ease-in-out infinite; }
+.spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 12px; }
+.loading-text { color: #fff; font-size: 14px; font-weight: 500; }
+.btn-col { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.btn { width: 100%; padding: 13px; border-radius: 50px; font-size: 15px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; }
+.btn:hover { opacity: .88; }
+.btn:active { transform: scale(0.97); }
+.btn-main { background: #7F77DD; color: #fff; }
+.btn-shoot { background: #D4537E; color: #fff; }
+.btn-retry { background: #EEEDFE; color: #534AB7; border: 1.5px solid #AFA9EC; }
+.result-wrap { margin-top: 1.25rem; display: none; }
+.income-hero { background: #7F77DD; border-radius: 18px; padding: 1.25rem; text-align: center; margin-bottom: 10px; }
+.income-label { font-size: 12px; color: #CECBF6; font-weight: 500; letter-spacing: .5px; margin-bottom: 6px; }
+.income-val { font-size: 38px; font-weight: 500; color: #fff; letter-spacing: -1px; }
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.stat-card { border-radius: 14px; padding: 12px 14px; }
+.stat-pink { background: #FBEAF0; border: 1.5px solid #F4C0D1; }
+.stat-teal { background: #E1F5EE; border: 1.5px solid #9FE1CB; }
+.stat-lbl { font-size: 11px; font-weight: 500; margin-bottom: 4px; }
+.stat-val { font-size: 20px; font-weight: 500; }
+.comment-card { background: #f9f9f9; border-radius: 14px; padding: 14px; border: 0.5px solid #e0e0e0; }
+.comment-text { font-size: 14px; color: #444; line-height: 1.65; }
+.error-text { color: #A32D2D; font-size: 13px; text-align: center; margin-top: 8px; display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes scanDown { 0% { top: 0%; } 100% { top: 100%; } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <h1 class="title">錯覚資産診断</h1>
+    <p class="subtitle">あなたの顔から年収を分析します</p>
+  </div>
+
+  <div class="cam-frame" id="cam-frame">
+    <div class="idle-inner" id="idle-inner">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#AFA9EC" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <p class="idle-text">カメラを起動して撮影してください</p>
+    </div>
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <img id="preview-img" alt="撮影した顔写真" />
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="scan-line"></div>
+      <div class="spinner"></div>
+      <p class="loading-text" id="loading-text">AIが顔を解析中...</p>
+    </div>
+  </div>
+  <p class="error-text" id="error-text"></p>
+
+  <div class="btn-col">
+    <button class="btn btn-main" id="start-btn" onclick="startCam()">カメラを起動する</button>
+    <button class="btn btn-shoot" id="shoot-btn" style="display:none;" onclick="shoot()">撮影して診断する</button>
+    <button class="btn btn-retry" id="retry-btn" style="display:none;" onclick="reset()">もう一度撮影する</button>
+  </div>
+
+  <div class="result-wrap" id="result-wrap">
+    <div class="income-hero">
+      <p class="income-label">あなたの推定年収</p>
+      <p class="income-val" id="r-income">---</p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card stat-pink">
+        <p class="stat-lbl" style="color:#993556;">社長オーラ</p>
+        <p class="stat-val" style="color:#72243E;" id="r-t1">-</p>
+      </div>
+      <div class="stat-card stat-teal">
+        <p class="stat-lbl" style="color:#0F6E56;">錯覚資産</p>
+        <p class="stat-val" style="color:#085041;" id="r-t2">-</p>
+      </div>
+    </div>
+    <div class="comment-card">
+      <p class="comment-text" id="r-comment"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+const PATTERNS = [
+  { income: "年収380万円", t1: "Cランク", t2: "低", comment: "顔から「まじめに働いてます」感がにじみ出ています。副業を始めれば化ける可能性大です。" },
+  { income: "年収520万円", t1: "Bランク", t2: "中", comment: "その目つきはすでに中間管理職のそれです。あと3年で係長確定の顔をしています。" },
+  { income: "年収720万円", t1: "Aランク", t2: "高", comment: "顔面から「ランチは1000円以上」オーラが漂っています。外資系向きの骨格です。" },
+  { income: "年収1,200万円", t1: "Sランク", t2: "高", comment: "この顔は明らかに会議室の上座に座る顔です。部下が自然と敬語を使いたくなる相貌です。" },
+  { income: "年収88万円", t1: "Dランク", t2: "低", comment: "夢を追っている顔をしています。財布は軽いですが、目の輝きだけは億万長者です。" },
+  { income: "年収3億円", t1: "Sランク", t2: "高", comment: "その顔、絶対に何か持っています。税理士に電話する回数が年10回を超えているはずです。" },
+  { income: "年収650万円", t1: "Aランク", t2: "中", comment: "堅実そうな顔立ちです。ボーナスは全額定期預金に突っ込んでいるタイプの顔です。" },
+  { income: "年収45万円", t1: "Dランク", t2: "低", comment: "芸術家の顔をしています。お金には縁がありませんが、感性だけは一流です。" },
+  { income: "年収2,800万円", t1: "Sランク", t2: "高", comment: "その眼光、完全にIPO経験者の目です。スタートアップ3社くらい関わってそうな顔です。" },
+  { income: "年収410万円", t1: "Cランク", t2: "中", comment: "優しそうな顔をしています。職場での人望は厚いですが、給与交渉だけが苦手なタイプです。" },
+  { income: "年収960万円", t1: "Aランク", t2: "高", comment: "その顔立ち、コンサル出身者に多い形です。スライドを作るのが異様に速そうな骨格です。" },
+  { income: "年収1億円", t1: "Sランク", t2: "高", comment: "社長か投資家かどちらかです。名刺に肩書きが3つ以上ある顔をしています。" },
+  { income: "年収330万円", t1: "Cランク", t2: "低", comment: "でも顔に誠実さがあふれています。お金より信頼を稼いできたタイプの顔です。" },
+  { income: "年収4,500万円", t1: "Sランク", t2: "高", comment: "港区に住んでいそうな顔です。年に2回は海外出張している雰囲気があります。" },
+  { income: "年収280万円", t1: "Dランク", t2: "低", comment: "ポテンシャルしか感じません。今は低空飛行でも、40代で大化けするタイプの顔です。" },
+  { income: "年収750万円", t1: "Aランク", t2: "中", comment: "士業の顔をしています。税理士か社労士か弁護士、どれかの資格を持っていそうです。" },
+  { income: "年収5億円", t1: "Sランク", t2: "高", comment: "この顔は完全に上場企業の創業者です。Wikipediaにページがあるはずです。確認してください。" },
+  { income: "年収490万円", t1: "Bランク", t2: "中", comment: "ITエンジニアの顔です。GitHubのコミット数だけは誰にも負けない顔立ちをしています。" },
+  { income: "年収1,800万円", t1: "Sランク", t2: "高", comment: "医者か外資金融かどちらかです。健康診断の結果だけが心配な顔つきです。" },
+  { income: "年収560万円", t1: "Bランク", t2: "中", comment: "営業で成果を出してきた顔です。飲み会の幹事を年12回こなしてきた実績が顔に出ています。" },
+  { income: "年収120万円", t1: "Dランク", t2: "低", comment: "フリーランスの顔をしています。確定申告の季節だけ顔色が変わるタイプです。" },
+  { income: "年収830万円", t1: "Aランク", t2: "高", comment: "大手メーカーの部長職の顔です。社内調整力だけで年収を積み上げてきた安定感があります。" },
+  { income: "年収2,200万円", t1: "Sランク", t2: "高", comment: "その顔、完全に転職回数5回以上のキャリア強者です。LinkedInのプロフィールが充実していそうです。" },
+  { income: "年収370万円", t1: "Cランク", t2: "低", comment: "公務員の顔です。定時に帰宅して夜は趣味に全振りしている安定志向の顔立ちです。" },
+  { income: "年収6,800万円", t1: "Sランク", t2: "高", comment: "M&Aを日常的にこなしていそうな顔です。会食の予定が3ヶ月先まで埋まっているはずです。" },
+  { income: "年収440万円", t1: "Bランク", t2: "中", comment: "教育関係者の顔をしています。給与は低めですが、人に感謝される頻度は日本トップクラスです。" },
+  { income: "年収1,050万円", t1: "Aランク", t2: "高", comment: "年収1000万の壁をすでに超えた顔をしています。確定拠出年金の運用利回りが気になる顔です。" },
+  { income: "年収55万円", t1: "Dランク", t2: "低", comment: "ユーチューバーかインフルエンサー志望の顔です。チャンネル登録者数は伸び悩んでいそうです。" },
+  { income: "年収680万円", t1: "Aランク", t2: "中", comment: "マーケターの顔をしています。データを見ながらPDCAを回すのが好きそうな顔立ちです。" },
+  { income: "年収3,600万円", t1: "Sランク", t2: "高", comment: "ファンドマネージャーかヘッジファンドの顔です。ブルームバーグを毎朝5時から見ていそうです。" },
+  { income: "年収310万円", t1: "Cランク", t2: "低", comment: "介護か保育の現場で働いていそうな顔です。社会への貢献度は年収の10倍あります。" },
+  { income: "年収890万円", t1: "Aランク", t2: "高", comment: "商社マンの顔をしています。海外赴任経験があってトランクケースの使い方が上手そうです。" },
+  { income: "年収1,500万円", t1: "Sランク", t2: "高", comment: "弁護士か会計士の顔です。六法全書を枕にして寝ていた学生時代が顔ににじみ出ています。" },
+  { income: "年収200万円", t1: "Dランク", t2: "低", comment: "副業で月5万稼ごうとしているのが顔に出ています。Udemyの講座を10本積んでいそうです。" },
+  { income: "年収770万円", t1: "Aランク", t2: "高", comment: "製薬会社のMRの顔です。接待ゴルフのスコアだけは自信があるタイプの顔立ちです。" },
+  { income: "年収2億円", t1: "Sランク", t2: "高", comment: "不動産投資家の顔をしています。所有物件数が2桁に乗っているはずです。確定申告が大変そうです。" },
+  { income: "年収460万円", t1: "Bランク", t2: "中", comment: "SE（システムエンジニア）の顔です。深夜のリリース作業で培われた忍耐力が顔に出ています。" },
+  { income: "年収1,300万円", t1: "Sランク", t2: "高", comment: "外資系マネージャーの顔です。英語でのプレゼンを週3回こなしてきた実績が顔ににじんでいます。" },
+  { income: "年収95万円", t1: "Dランク", t2: "低", comment: "バンドマンか役者志望の顔をしています。夢だけは年収億超えのスケールを持っています。" },
+  { income: "年収580万円", t1: "Bランク", t2: "中", comment: "金融機関勤務の顔です。スーツのサイズ感が完璧で、靴だけはやたら高いタイプの顔立ちです。" }
+];
+
+const LOADING_MSGS = ['AIが顔を解析中...', '銀行口座を推測中...', '錯覚資産を計算中...', '年収を算出中...'];
+let stream = null;
+let lastIndex = -1;
+
+function pickPattern() {
+  let idx;
+  do { idx = Math.floor(Math.random() * PATTERNS.length); } while (idx === lastIndex);
+  lastIndex = idx;
+  return PATTERNS[idx];
+}
+
+function startCam() {
+  showError('');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(s => {
+      stream = s;
+      document.getElementById('video').srcObject = s;
+      document.getElementById('video').style.display = 'block';
+      document.getElementById('idle-inner').style.display = 'none';
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('shoot-btn').style.display = 'block';
+    })
+    .catch(() => showError('カメラへのアクセスが許可されていません。'));
+}
+
+function shoot() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0);
+  const dataURL = canvas.toDataURL('image/jpeg', 0.8);
+
+  document.getElementById('preview-img').src = dataURL;
+  document.getElementById('preview-img').style.display = 'block';
+  document.getElementById('video').style.display = 'none';
+  document.getElementById('shoot-btn').style.display = 'none';
+  document.getElementById('loading-overlay').style.display = 'flex';
+
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+  let i = 0;
+  const iv = setInterval(() => {
+    document.getElementById('loading-text').textContent = LOADING_MSGS[i++ % LOADING_MSGS.length];
+  }, 900);
+
+  setTimeout(() => {
+    clearInterval(iv);
+    showResult(pickPattern());
+  }, 3000);
+}
+
+function showResult(r) {
+  document.getElementById('loading-overlay').style.display = 'none';
+  document.getElementById('r-income').textContent = r.income;
+  document.getElementById('r-t1').textContent = r.t1;
+  document.getElementById('r-t2').textContent = r.t2;
+  document.getElementById('r-comment').textContent = r.comment;
+  document.getElementById('result-wrap').style.display = 'block';
+  document.getElementById('retry-btn').style.display = 'block';
+}
+
+function reset() {
+  document.getElementById('preview-img').style.display = 'none';
+  document.getElementById('preview-img').src = '';
+  document.getElementById('idle-inner').style.display = 'block';
+  document.getElementById('result-wrap').style.display = 'none';
+  document.getElementById('retry-btn').style.display = 'none';
+  document.getElementById('start-btn').style.display = 'block';
+  showError('');
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-text');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+</script>
+</body>
+</html>
